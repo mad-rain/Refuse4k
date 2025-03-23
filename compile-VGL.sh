@@ -1,0 +1,1 @@
+gcc -s -O3 -funroll-all-loops -DVGL main.c -o FreeBSD-VGL/refuse -lm -lvgl

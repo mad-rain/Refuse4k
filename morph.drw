@@ -1,0 +1,112 @@
+{
+        {
+                float s1,c1,s2,c2,s3,c3;
+                int f;
+
+                s1 = sin(morph_alpha); c1 = cos(morph_alpha);
+                s2 = sin(morph_beta);  c2 = cos(morph_beta);
+                s3 = sin(morph_gamma); c3 = cos(morph_gamma);
+
+                for (f=0;f<v_count;f++) {
+                        float x0,y0,z0,x1,y1,z1;
+                        x1 = morph_sintab[((unsigned int)
+                            (morph_v[f][1] + morph_v[f][2]) +
+                            morph_frame + 23) % 0x100] + morph_v[f][0];
+                        y1 = morph_sintab[((unsigned int)
+                            (morph_v[f][0] + morph_v[f][2]) +
+                            morph_frame) % 0x100] + morph_v[f][1];
+                        z1 = morph_sintab[((unsigned int)
+                            (morph_v[f][0] + morph_v[f][1]) +
+                            morph_frame + 180) % 0x100] + morph_v[f][2];
+
+                        y0 = x1 * s1 + y1 * c1;
+                        x0 = x1 * c1 - y1 * s1;
+
+                        x1 = x0 * c2 - z1 * s2;
+                        z0 = x0 * s2 + z1 * c2;
+
+                        y1 = y0 * c3 - z0 * s3;
+                        z1 = y0 * s3 + z0 * c3 + morph_dist;
+
+                        morph_v2[f][0] = x1;
+                        morph_v2[f][1] = y1;
+                        morph_v2[f][2] = z1;
+                        morph_v3[f][0] = (int)(x1*(float)(0x100*0x10000)/z1) + (float)(160 * 0x10000);
+                        morph_v3[f][1] = (int)(y1*(float)(0x100/240.0*200.0)/z1) + 100.0f;
+                        morph_v3[f][2] = (int)(z1*(float)(0x10000));
+
+                        morph_z[f].o = f;
+                        morph_z[f].z = morph_v3[f][2];
+                  }
+
+                  morph_qsort(morph_z,&morph_z[p_count-1]);
+        }
+
+
+        {                      
+                int *m;
+                int f, p0, p1;
+
+                m = (int *)morph_nv;
+
+                p0 = 0, p1 = MORPH_SIZE;
+
+                for (f=0;f<MORPH_SIZE;f++) {
+                        int g;
+                        for (g=0;g<MORPH_SIZE;g++) {
+                                float vx,vy,vz,cx,cy,cz,nx,ny,nz;
+                                int p11;
+                                int p2=p1+1;
+                                if (g == MORPH_SIZE-1) p2 -= MORPH_SIZE;
+                                if (f == MORPH_SIZE-1) {
+                                       p11 = p2-MORPH_SIZE * 2;
+                                       p2  = p1-MORPH_SIZE * 2;
+                                } else p11 = p1;
+
+                                vx = morph_v2[p11][0] - morph_v2[p0][0];
+                                cx = morph_v2[p2][0] - morph_v2[p0][0];
+                                vy = morph_v2[p11][1] - morph_v2[p0][1];
+                                cy = morph_v2[p2][1] - morph_v2[p0][1];
+                                vz = morph_v2[p11][2] - morph_v2[p0][2];
+                                cz = morph_v2[p2][2] - morph_v2[p0][2];
+
+                                nx = vy*cz - vz*cy;
+                                ny = vz*cx - vx*cz;
+                                nz = vx*cy - vy*cx;
+
+                                vx = sqrt(nx*nx + ny*ny + nz*nz);
+
+                                m[0] = (int)((nx/vx) * 0x3000000/8 + 0x800000);
+                                m[1] = (int)((ny/vx) * 0x3000000/8 + 0x800000);
+
+                                p0 ++, p1 ++;
+                                m += 2;
+                        }
+                }
+        }
+
+        {                              
+                int p0, p1, p2, p3, f;
+
+                for (f=0;f<p_count;f++) {
+                        p0 = morph_z[f].o;
+                        p1 = p0 + MORPH_SIZE;
+                        p2 = (p0 & (~(MORPH_SIZE - 1))) + (p0 + 1) % MORPH_SIZE;
+                        p3 = p2 + MORPH_SIZE;
+
+                        affine_mapper(morph_v3[p0][0], morph_v3[p0][1],
+                                      morph_nv[p0][0], morph_nv[p0][1],
+                                      morph_v3[p1][0], morph_v3[p1][1],
+                                      morph_nv[p1][0], morph_nv[p1][1],
+                                      morph_v3[p3][0], morph_v3[p3][1],
+                                      morph_nv[p3][0], morph_nv[p3][1]);
+
+                        affine_mapper(morph_v3[p0][0], morph_v3[p0][1],
+                                      morph_nv[p0][0], morph_nv[p0][1],
+                                      morph_v3[p2][0], morph_v3[p2][1],
+                                      morph_nv[p2][0], morph_nv[p2][1],
+                                      morph_v3[p3][0], morph_v3[p3][1],
+                                      morph_nv[p3][0], morph_nv[p3][1]);
+                }
+        }
+}
