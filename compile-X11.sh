@@ -1,1 +1,1 @@
-gcc -Wall -pedantic -s -O3 -funroll-all-loops -DX11 -L/usr/X11R6/lib -I/usr/X11R6/include main.c -o FreeBSD-X11/refuse -lm -lX11
+gcc -Wall -pedantic -s -O3 -funroll-all-loops -DX11 -L/usr/X11R6/lib -I/usr/X11R6/include main.c -o refuse -lm -lX11

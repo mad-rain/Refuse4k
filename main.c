@@ -13,6 +13,7 @@
 #ifdef X11
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include "font.c"
@@ -20,6 +21,7 @@
 #ifdef VGL
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <machine/console.h>
 #include <vgl.h>
 #include "font.c"
@@ -43,7 +45,21 @@ int stack[STACK_SIZE];
 int cur_time;
 
 #ifndef DPMI
-#define m_get_time() clock()
+
+#include <stdint.h>
+#include <time.h>
+
+int m_get_time() {
+	struct timespec TimeVal;
+	clock_gettime(CLOCK_BOOTTIME, &TimeVal);
+
+	uint64_t Time = TimeVal.tv_sec;
+	Time *= 1000000000;
+	Time += TimeVal.tv_nsec;
+
+	return Time / (1000000000 / 128);
+}
+
 #else
 #define m_get_time() current_time
 #endif
@@ -86,7 +102,6 @@ int screen;
 XEvent event;
 XImage *image;
 GC gc;
-int bpp;
 
 unsigned short pal16[0x100];
 unsigned int pal32[0x100];
@@ -98,21 +113,7 @@ void set_palette()
 {
 #ifdef X11
 
-        if (bpp == 16) {
-
-                int c = 0x100;
-                int *src = pal;
-                unsigned short *dest = pal16;
-
-                do {
-                        unsigned char r = (*src ++ * pal_bright) >> 9;
-                        unsigned char g = (*src ++ * pal_bright) >> 8;
-                        unsigned char b = (*src ++ * pal_bright) >> 9;
-                        *dest ++ = b + (g << 5) + (r << (5+6));
-                } while (--c);
-        }
-
-        if (bpp == 32 || bpp == 24) {
+        {
                 int c = 0x100;
                 int *src = pal;
                 unsigned int *dest = pal32;
@@ -122,21 +123,6 @@ void set_palette()
                         unsigned char b = (*src ++ * pal_bright) >> 6;
                         *dest ++ = b + (g << 8) + (r << 16);
                 } while (--c);
-        }
-
-        if (bpp == 8) {
-                int *src = pal;
-                int c = 0x100;
-                XColor *cl = rgb;
-                do {
-                        cl->red   = (*src ++ * pal_bright) << 2;
-                        cl->green = (*src ++ * pal_bright) << 2;
-                        cl->blue  = (*src ++ * pal_bright) << 2;
-                        cl ++;
-                } while (--c);
-                
-                XStoreColors(display, cmap, rgb, 0x100);
-                XSetWindowColormap(display, cur_window, cmap);
         }
 
 #endif /* X11 */
@@ -217,7 +203,7 @@ int main()
         root_window = RootWindow(display, screen);
         gc = DefaultGC(display, screen);
 
-        bpp = DefaultDepth(display, screen);
+        int fixed_bpp = 32;
     
         cur_window = XCreateSimpleWindow(display, root_window, 0, 0,
                                          320, 200, 
@@ -233,31 +219,19 @@ int main()
         XSetWMProperties(display, cur_window, &name, &name,
                          NULL, 0, size, NULL, NULL);
 
-        if (bpp == 8) {
-                int i;
-
-                cmap = XCreateColormap(display, cur_window, visual, AllocNone);
-                // for (i=0;i<0x100;i++) {
-                if (!XAllocColorCells(display, cmap, 0, 0, 0, cells, 0x100)) {
-                        printf("can't allocate color cells\n");
-                        return 0;
-                }
-                        
-                for (i=0;i<0x100;i++) {
-                        rgb[i].pixel = cells[i];
-                        rgb[i].flags = DoRed | DoGreen | DoBlue;
-                }
-                XVideoBuffer = video_buffer;
-        } else {
-                XVideoBuffer = (void *) malloc(320 * 200 * bpp / 8);
-        }
+        XVideoBuffer = (void *) malloc(320 * 200 * fixed_bpp / 8);
         
         set_palette();
 
-        image = XCreateImage(display, visual, bpp, ZPixmap,
+        image = XCreateImage(display, visual, DefaultDepth(display, screen), ZPixmap,
                              0,(char *)XVideoBuffer, 320,
-                             200, (bpp == 24) ? 32 : bpp,
-                             320 * bpp / 8);
+                             200, fixed_bpp,
+                             320 * fixed_bpp / 8);
+
+        if (image == NULL) {
+                printf("can't create image\n");
+                return 0;
+        }
                              
         XMapWindow(display, cur_window);
         // XSelectInput(display, cur_window, KeyPressMask);
@@ -320,23 +294,8 @@ int main()
 
 #ifdef X11
                         memset(video_buffer, 0, 320);
-                        if (bpp == 16) {
-                                unsigned short *dest = (unsigned short *) XVideoBuffer;
-                                unsigned char *src = video_buffer;
-                                int size = 320 * 200;
-                                do *dest ++ = pal16[*src ++]; while (--size);
-                        } else if (bpp == 24) {
-                                unsigned char *src = video_buffer;
-                                unsigned char *dest = XVideoBuffer;
-                                int size = 320 * 200;
-                                do {
-                                        unsigned int c = pal32[*src ++];
-                                        *((unsigned short *)dest) = c;
-                                        dest[2] = c >> 16;
-                                        dest += 3;
-                                } while (--size);
-
-                        } else if (bpp == 32) {
+                        
+                        {
                                 unsigned char *src = video_buffer;
                                 unsigned int *dest = XVideoBuffer;
                                 int size = 320 * 200;
@@ -368,7 +327,7 @@ stop:
 
 #ifdef X11
         XCloseDisplay(display);
-        if (bpp != 8) free(XVideoBuffer);
+        free(XVideoBuffer);
         return 0;
 #endif /* X11 */
 #ifdef VGL
